@@ -7,4 +7,9 @@
 #SBATCH --cpus-per-task=10  
 
 source activate environment_shannon 
-python /home/eharpu/methylation_analysis/run.py
+#python /home/eharpu/methylation_analysis/run.py
+
+input_dir="/shares/grossniklaus.botinst.uzh/eharputluoglu/datasets_gz"
+output_dir="/shares/grossniklaus.botinst.uzh/eharputluoglu/output"
+
+

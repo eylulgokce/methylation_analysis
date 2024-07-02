@@ -3,78 +3,89 @@ import numpy as np
 import os
 import gzip
 import time
+import sys
 from concurrent.futures import ProcessPoolExecutor
 from scipy.stats import entropy, ks_2samp
 from scipy.special import rel_entr
 from scipy.spatial.distance import jensenshannon
 
-# Function to calculate KL divergence
+
+############ Divergence ##############
+
 def kl_divergence(p, q):
     return np.sum(rel_entr(p, q))
 
-def geometric_jsd(p, q):
-    jsd = jensenshannon(p, q)
-    return np.sqrt(jsd)
+def jensen_shannon_divergence(p, q):
+    m = 0.5 * (p + q)
+    return 0.5 * kl_divergence(p, m) + 0.5 * kl_divergence(q, m)
 
+def geometric_jsd(p, q):
+    jsd = jensen_shannon_divergence(p, q)
+    return np.sqrt(jsd)
 
 def ks_test(p, q):
     ks_result = ks_2samp(p, q)
     return ks_result.statistic, ks_result.pvalue
 
+############# Smoothing ###################
+
 def laplace_smoothing(data, alpha=1e-10):
     return (data + alpha) / (np.sum(data) + alpha * len(data))
 
-def process_and_analyze(file_path, output_base_dir):
-    with gzip.open(file_path, 'rt') as f:
-        df = pd.read_csv(f, sep='\t', header=None, names=['chr', 'start', 'end', 'percentage', 'methylated', 'unmethylated'])
+#################### ANALYZE ########################
 
-    results_list = []
+def process_and_analyze(file_path, output_path):
+    try:
+        with gzip.open(file_path, 'rt') as f:
+            df = pd.read_csv(f, sep='\t', header=None, names=['chr', 'start', 'end', 'percentage', 'methylated', 'unmethylated'])
 
-    for index, row in df.iterrows():
-        start_time = time.time()
+        results_list = []
 
-        # Prepare data
-        data = np.array([row['methylated'], row['unmethylated']]) # Laplace increases both methylated and unmethylated counts
-        smoothed_data = laplace_smoothing(data)
-        p = np.array([smoothed_data[0], smoothed_data[1]])
-        q = np.array([smoothed_data[1], smoothed_data[0]])
+        for index, row in df.iterrows():
+            start_time = time.time()
 
-        # Normalize
-        p /= p.sum()
-        q /= q.sum()
+            # Prepare data
+            data = np.array([row['methylated'], row['unmethylated']]) 
+            smoothed_data = laplace_smoothing(data)
+            p = np.array([smoothed_data[0], smoothed_data[1]])
+            q = np.array([smoothed_data[1], smoothed_data[0]])
 
-        # Calculate divergence
-        ent = entropy(p)
-        kl = kl_divergence(p, q)
-        js = jensenshannon(p, q)
-        gjs = geometric_jsd(p, q)
-        ks_stat, ks_pvalue = ks_test(p, q)
-        end_time = time.time()
-        time_elapsed = end_time - start_time
+            # Normalize 
+            p /= p.sum()
+            q /= q.sum()
 
-        results_list.append([row['chr'], row['start'], row['end'], row['percentage'], row['methylated'], row['unmethylated'], ent, kl, js, gjs, ks_stat, ks_pvalue, time_elapsed])
+            # Calculate divergence
+            ent = entropy(p)
+            kl = kl_divergence(p, q)
+            js = jensenshannon(p, q)
+            gjs = geometric_jsd(p, q)
+            ks_stat, ks_pvalue = ks_test(p, q)
+            end_time = time.time()
+            time_elapsed = end_time - start_time
 
-    results_df = pd.DataFrame(results_list, columns=['chr', 'start', 'end', 'percentage', 'methylated', 'unmethylated', 'entropy', 'relative_entropy', 'jsd', 'geometric_jsd', 'ks_stat', 'ks_pvalue', 'time'])
+            results_list.append([row['chr'], row['start'], row['end'], row['percentage'], row['methylated'], row['unmethylated'], ent, kl, js, gjs, ks_stat, ks_pvalue, time_elapsed])
 
-    sample_dir = os.path.join(output_base_dir, os.path.basename(os.path.dirname(file_path)))
-    os.makedirs(sample_dir, exist_ok=True)
+        results_df = pd.DataFrame(results_list, columns=['chr', 'start', 'end', 'percentage', 'methylated', 'unmethylated', 'entropy', 'relative_entropy', 'jsd', 'geometric_jsd', 'ks_stat', 'ks_pvalue', 'time'])
 
-    output_filename = os.path.join(sample_dir, f"output_{os.path.basename(file_path).replace('.gz', '')}.csv.gz")
-    results_df.to_csv(output_filename, index=False, compression='gzip')
+        # check if the output directory exists
+        #os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        results_df.to_csv(output_path, index=False, compression='gzip')
 
-    return results_df
+        return results_df
+    except Exception as e:
+        print(f"Error processing file {file_path}: {e}")
+        return None
 
-base_dir = '/shares/grossniklaus.botinst.uzh/eharputluoglu/datasets_gz'
-output_base_dir = '/shares/grossniklaus.botinst.uzh/eharputluoglu/output'
 
-files_to_process = []
-for root, dirs, files in os.walk(base_dir):
-    for file in files:
-        if file.endswith('.cov.gz'):
-            files_to_process.append(os.path.join(root, file))
+########################### MAIN ###############################
 
-# Process files in parallel
-with ProcessPoolExecutor(max_workers=10) as executor:
-    futures = [executor.submit(process_and_analyze, file_path, output_base_dir) for file_path in files_to_process]
-    for future in futures:
-        future.result()
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print("ARGS is not equal to 3! USE: python run.py <input_file.gz> <output_file.csv.gz>")
+        sys.exit(1)
+
+    input_file = sys.argv[1]
+    output_file = sys.argv[2]
+
+    process_and_analyze(input_file, output_file)

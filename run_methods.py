@@ -12,11 +12,11 @@ from statsmodels.stats.multicomp import pairwise_tukeyhsd
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    filename='methylation_analysis_3.log', # Log to a file
-    filemode='w'                        # Overwrite the log file each run
+    filename='methylation_analysis_3.log', 
+    filemode='w'                        
 )
 
-def calculate_divergences_and_ks(df, smoothing=1e-10):
+def calculate_divergences_and_ks(df, smoothing=1e-5):
     """Calculates normalized divergences (JSD, KL, GJS, SGJS) and KS test for methylation data.
 
     Args:
@@ -36,7 +36,6 @@ def calculate_divergences_and_ks(df, smoothing=1e-10):
     if len(df) == 0:
         return None, None, None, None, None, None
     
-    # Add smoothing to avoid division by zero issues
     df["methylated"] += smoothing
     df["unmethylated"] += smoothing
     
@@ -84,24 +83,6 @@ def clean_data(results_df):
     """Cleans the results DataFrame by removing file extensions from sample names."""
     results_df['Sample'] = results_df['Sample'].astype(str).str.replace('.bedgraph.gz', '', regex=False)
     return results_df
-
-def perform_anova(results_df, sample_name, divergence_column):
-    """Performs ANOVA and Tukey's HSD test on a specific divergence column for a given sample."""
-    sample_df = results_df[results_df['Sample'] == sample_name]
-    groups = sample_df.groupby('Context')[divergence_column].apply(list)
-
-    # Check if there are enough groups for ANOVA (at least 2)
-    if len(groups) < 2:
-        print(f"Skipping ANOVA for sample {sample_name} - Not enough groups for {divergence_column}")
-        return None, None
-
-    statistic, pvalue = f_oneway(*groups)
-
-    if pvalue < 0.05:  # Significance level
-        tukey_results = pairwise_tukeyhsd(sample_df[divergence_column], sample_df['Context'])
-        return statistic, tukey_results
-    else:
-        return statistic, None
 
 
 # Data processing pipeline
@@ -158,20 +139,4 @@ results_df = pd.DataFrame(results)
 #results_df = clean_data(results_df)
 
 # Save the results to a CSV file
-results_df.to_csv("/shares/grossniklaus.botinst.uzh/eharputluoglu/calculation_output/methylation_analysis_results_3.csv", index=False)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+results_df.to_csv("/shares/grossniklaus.botinst.uzh/eharputluoglu/calculation_output/methylation_analysis_results_Smooting_1e-5.csv", index=False)
